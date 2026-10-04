@@ -1,0 +1,71 @@
+# Builds Appium's WebDriverAgent (the iOS UI-automation server) as a
+# development-signed IPA for Cato's iPhone 12, so Hermes can drive the phone
+# over USB: tap, swipe, type, screenshot, launch apps.
+#
+# Prerequisites (Codemagic UI / Apple portal, not in the repo):
+#   - Developer Portal integration named "Garasjebok API" (same one the other apps use).
+#   - Device 00008101-001938620EFA001E registered in the Apple Developer portal.
+#   - App ID no.solynex.cato.wda.xctrunner registered (explicit, no capabilities).
+#
+# Strategy: compile WDA UNSIGNED (so Xcode's per-target signing rules cannot
+# break the framework/runner mix), then re-sign everything in scripts/resign.py
+# with the development cert + profile that ios_signing installed.
+
+workflows:
+  wda-ios:
+    name: WebDriverAgent runner (development)
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    integrations:
+      app_store_connect: "Garasjebok API"
+    environment:
+      xcode: latest
+      ios_signing:
+        distribution_type: development
+        bundle_identifier: no.solynex.cato.wda.xctrunner
+      vars:
+        WDA_TAG: "v16.14.0"
+        WDA_BUNDLE_ID: "no.solynex.cato.wda"
+        DEVICE_UDID: "00008101-001938620EFA001E"
+    scripts:
+      - name: Show what signing installed
+        script: |
+          echo "--- identities ---"
+          security find-identity -v -p codesigning || true
+          echo "--- profiles ---"
+          ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/" || true
+      - name: Fetch WebDriverAgent
+        script: |
+          set -e
+          git clone --depth 1 --branch "$WDA_TAG" https://github.com/appium/WebDriverAgent.git WebDriverAgent
+      - name: Rebrand bundle id
+        script: |
+          set -e
+          cd WebDriverAgent
+          # Runner target id becomes no.solynex.cato.wda -> runner app is
+          # no.solynex.cato.wda.xctrunner, which is the registered App ID.
+          sed -i '' "s/com\.facebook\.WebDriverAgentRunner/${WDA_BUNDLE_ID}/g" WebDriverAgent.xcodeproj/project.pbxproj
+          grep -c "$WDA_BUNDLE_ID" WebDriverAgent.xcodeproj/project.pbxproj
+      - name: Build unsigned for device
+        script: |
+          set -eo pipefail
+          cd WebDriverAgent
+          xcodebuild build-for-testing \
+            -project WebDriverAgent.xcodeproj \
+            -scheme WebDriverAgentRunner \
+            -sdk iphoneos \
+            -configuration Debug \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath "$CM_BUILD_DIR/dd" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            COMPILER_INDEX_STORE_ENABLE=NO 2>&1 | tee /tmp/build.log | tail -40
+      - name: Re-sign and package IPA
+        script: |
+          set -e
+          python3 "$CM_BUILD_DIR/scripts/resign.py" \
+            --app "$CM_BUILD_DIR/dd/Build/Products/Debug-iphoneos/WebDriverAgentRunner-Runner.app" \
+            --bundle-id "${WDA_BUNDLE_ID}.xctrunner" \
+            --udid "$DEVICE_UDID" \
+            --out "$CM_BUILD_DIR/WebDriverAgentRunner.ipa"
+    artifacts:
+      - WebDriverAgentRunner.ipa
