@@ -40,7 +40,8 @@ workflows:
             --certificate-key "@file:$CM_BUILD_DIR/signing/key.pem" \
             --create
           keychain add-certificates
-          cp "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision "$CM_BUILD_DIR/signing/" || true
+          cp "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/"*.mobileprovision "$CM_BUILD_DIR/signing/"
+          cp "$HOME/Library/Developer/Xcode/UserData/Certificates/"*.p12 "$CM_BUILD_DIR/signing/"
           echo "--- identities ---"
           security find-identity -v -p codesigning || true
           ls -la "$CM_BUILD_DIR/signing"
@@ -81,3 +82,4 @@ workflows:
       - WebDriverAgentRunner.ipa
       - signing/key.pem
       - signing/*.mobileprovision
+      - signing/*.p12

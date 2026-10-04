@@ -22,9 +22,12 @@ if info["CFBundleIdentifier"] != a.bundle_id:
     sys.exit(f"ERROR: app bundle id {info['CFBundleIdentifier']} != expected {a.bundle_id}")
 
 # 2. Find a profile for this bundle id that includes the device.
-pdir = os.path.expanduser("~/Library/MobileDevice/Provisioning Profiles")
+pdirs = [os.path.expanduser("~/Library/MobileDevice/Provisioning Profiles"),
+         os.path.expanduser("~/Library/Developer/Xcode/UserData/Provisioning Profiles")]
 chosen = None
-for p in sorted(glob.glob(os.path.join(pdir, "*.mobileprovision"))):
+profiles = sorted(p for d in pdirs for p in glob.glob(os.path.join(d, "*.mobileprovision")))
+print("profiles found:", profiles)
+for p in profiles:
     prof = plistlib.loads(subprocess.check_output(["security", "cms", "-D", "-i", p]))
     appid = prof["Entitlements"]["application-identifier"].split(".", 1)[1]
     devices = prof.get("ProvisionedDevices", [])
