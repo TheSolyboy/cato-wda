@@ -20,20 +20,11 @@ workflows:
       app_store_connect: "Garasjebok API"
     environment:
       xcode: latest
-      # Profile "Cato WebDriverAgent Runner ios_app_development ..." already exists
-      # in the portal (created by build 2 via the API). ios_signing only fetches.
-      ios_signing:
-        distribution_type: development
-        bundle_identifier: no.solynex.cato.wda.xctrunner
       vars:
         WDA_TAG: "v16.14.0"
         WDA_BUNDLE_ID: "no.solynex.cato.wda"
         DEVICE_UDID: "00008101-001938620EFA001E"
     scripts:
-      - name: Show what signing installed
-        script: |
-          security find-identity -v -p codesigning || true
-          ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/" || true
       - name: Fetch WebDriverAgent
         script: |
           set -e
@@ -59,13 +50,20 @@ workflows:
             -derivedDataPath "$CM_BUILD_DIR/dd" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             COMPILER_INDEX_STORE_ENABLE=NO 2>&1 | tee /tmp/build.log | tail -40
-      - name: Re-sign and package IPA
+      - name: Package unsigned app + download existing dev profiles
         script: |
           set -e
-          python3 "$CM_BUILD_DIR/scripts/resign.py" \
-            --app "$CM_BUILD_DIR/dd/Build/Products/Debug-iphoneos/WebDriverAgentRunner-Runner.app" \
-            --bundle-id "${WDA_BUNDLE_ID}.xctrunner" \
-            --udid "$DEVICE_UDID" \
-            --out "$CM_BUILD_DIR/WebDriverAgentRunner.ipa"
+          # ios_signing refuses to use profiles whose certificate key Codemagic
+          # does not hold, and --create hits Apple's one-dev-cert limit. So this
+          # build only produces the unsigned app and the PUBLIC signing inputs;
+          # the private key never leaves the machine that signs (Hermes server).
+          mkdir -p "$CM_BUILD_DIR/out/Payload"
+          cp -R "$CM_BUILD_DIR/dd/Build/Products/Debug-iphoneos/WebDriverAgentRunner-Runner.app" "$CM_BUILD_DIR/out/Payload/"
+          (cd "$CM_BUILD_DIR/out" && zip -qry ../WebDriverAgentRunner-unsigned.ipa Payload)
+          mkdir -p "$CM_BUILD_DIR/profiles"
+          app-store-connect profiles list --type IOS_APP_DEVELOPMENT --save
+          cp "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/"*.mobileprovision "$CM_BUILD_DIR/profiles/"
+          ls -la "$CM_BUILD_DIR/profiles" "$CM_BUILD_DIR/WebDriverAgentRunner-unsigned.ipa"
     artifacts:
-      - WebDriverAgentRunner.ipa
+      - WebDriverAgentRunner-unsigned.ipa
+      - profiles/*.mobileprovision
