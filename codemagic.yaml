@@ -20,31 +20,20 @@ workflows:
       app_store_connect: "Garasjebok API"
     environment:
       xcode: latest
+      # Profile "Cato WebDriverAgent Runner ios_app_development ..." already exists
+      # in the portal (created by build 2 via the API). ios_signing only fetches.
+      ios_signing:
+        distribution_type: development
+        bundle_identifier: no.solynex.cato.wda.xctrunner
       vars:
         WDA_TAG: "v16.14.0"
         WDA_BUNDLE_ID: "no.solynex.cato.wda"
         DEVICE_UDID: "00008101-001938620EFA001E"
     scripts:
-      - name: Create development cert + profile via the App Store Connect API
+      - name: Show what signing installed
         script: |
-          set -e
-          # ios_signing only FETCHES existing profiles and fails with "No matching
-          # profiles found" when none exists. fetch-signing-files --create makes
-          # the profile (and a cert, using our own key) for every registered device.
-          mkdir -p "$CM_BUILD_DIR/signing"
-          openssl genrsa -out "$CM_BUILD_DIR/signing/key.pem" 2048
-          keychain initialize
-          app-store-connect fetch-signing-files "${WDA_BUNDLE_ID}.xctrunner" \
-            --platform IOS \
-            --type IOS_APP_DEVELOPMENT \
-            --certificate-key "@file:$CM_BUILD_DIR/signing/key.pem" \
-            --create
-          keychain add-certificates
-          cp "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/"*.mobileprovision "$CM_BUILD_DIR/signing/"
-          cp "$HOME/Library/Developer/Xcode/UserData/Certificates/"*.p12 "$CM_BUILD_DIR/signing/"
-          echo "--- identities ---"
           security find-identity -v -p codesigning || true
-          ls -la "$CM_BUILD_DIR/signing"
+          ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/" || true
       - name: Fetch WebDriverAgent
         script: |
           set -e
@@ -80,6 +69,3 @@ workflows:
             --out "$CM_BUILD_DIR/WebDriverAgentRunner.ipa"
     artifacts:
       - WebDriverAgentRunner.ipa
-      - signing/key.pem
-      - signing/*.mobileprovision
-      - signing/*.p12
