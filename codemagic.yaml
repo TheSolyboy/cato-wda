@@ -20,20 +20,30 @@ workflows:
       app_store_connect: "Garasjebok API"
     environment:
       xcode: latest
-      ios_signing:
-        distribution_type: development
-        bundle_identifier: no.solynex.cato.wda.xctrunner
       vars:
         WDA_TAG: "v16.14.0"
         WDA_BUNDLE_ID: "no.solynex.cato.wda"
         DEVICE_UDID: "00008101-001938620EFA001E"
     scripts:
-      - name: Show what signing installed
+      - name: Create development cert + profile via the App Store Connect API
         script: |
+          set -e
+          # ios_signing only FETCHES existing profiles and fails with "No matching
+          # profiles found" when none exists. fetch-signing-files --create makes
+          # the profile (and a cert, using our own key) for every registered device.
+          mkdir -p "$CM_BUILD_DIR/signing"
+          openssl genrsa -out "$CM_BUILD_DIR/signing/key.pem" 2048
+          keychain initialize
+          app-store-connect fetch-signing-files "${WDA_BUNDLE_ID}.xctrunner" \
+            --platform IOS \
+            --type IOS_APP_DEVELOPMENT \
+            --certificate-key "@file:$CM_BUILD_DIR/signing/key.pem" \
+            --create
+          keychain add-certificates
+          cp "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision "$CM_BUILD_DIR/signing/" || true
           echo "--- identities ---"
           security find-identity -v -p codesigning || true
-          echo "--- profiles ---"
-          ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/" || true
+          ls -la "$CM_BUILD_DIR/signing"
       - name: Fetch WebDriverAgent
         script: |
           set -e
@@ -69,3 +79,5 @@ workflows:
             --out "$CM_BUILD_DIR/WebDriverAgentRunner.ipa"
     artifacts:
       - WebDriverAgentRunner.ipa
+      - signing/key.pem
+      - signing/*.mobileprovision
